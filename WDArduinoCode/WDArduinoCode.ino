@@ -1,5 +1,4 @@
 
-
 #include <time.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266WiFi.h>
@@ -9,63 +8,36 @@
 #include <GxIO/GxIO_SPI/GxIO_SPI.cpp>
 #include <GxIO/GxIO.cpp>
 #include <Fonts/FreeMono9pt7b.h>
-#include <string>
 #include "WDSensitiveData.h"
 
+// Get sensitive data from a header file.
 const char* ssid = WIFI_SSID;
 const char* password = WIFI_PASS;
 String API_KEY = APIKEY;
 
-// E-Paper display initalization
+// SPI initalization.
 GxIO_Class io(SPI, SS, D3, D4);
+// Adafruit GFX compatible class.
 GxEPD_Class display(io);
 
 // Define length of the sleep. Default is 900 s (= 15 min).
-#define SLEEP_SECONDS 90
+#define SLEEP_SECONDS 30*60
 
-// HSL:n pysäkki-id:t voi hakea menemällä osoitteeseen
-// https://www.hsl.fi/reitit-ja-aikataulut,
-// kirjoittamalla pysäkkihakuun pysäkin nimen, ja
-// kopioimalla osoitepalkista pysäkin tunnisteen,
-// joka on muotoa HSL:<numerosarja>.
-
-// Koko Suomen kattavia pysäkkitunnisteita voi hakea
-// samasta rajapinnasta käyttämällä linkistä
-// https://goo.gl/cwAC1H löytyvää kyselyä.
-
-// GraphQL-pyyntö Digitransitin rajapintaan. Kokeile rajapintaa täällä: goo.gl/cwAC1H
-//static const char digitransitQuery[] PROGMEM = "{\"query\":\"{stops(ids:[\\\"HSL:2215255\\\"]){name,stoptimesWithoutPatterns(numberOfDepartures:17){realtimeDeparture,realtime,trip{route{shortName}}}}}\"}";
-// Query to Openwathermap interface.
-//static const char weatherQuery[] = "{\"query\":\"{main\"}";
-
-// ArduinoJSON-puskurin koko. Ks. https://arduinojson.org/assistant/
-// Puskurin on oltava suurempi kuin oletettu JSON-vastaus rajapinnasta.
+// Size of the ArduinoJSON buffer (https://arduinojson.org/assistant/).
+// Buffer size must be larger than expected JSON reply.
+// 5 day / 3 hour forecast.
 //const size_t bufferSize = JSON_ARRAY_SIZE(1) + JSON_ARRAY_SIZE(16) + 32 * JSON_OBJECT_SIZE(1) + JSON_OBJECT_SIZE(2) + 15 * JSON_OBJECT_SIZE(3) + 1140;
+// Current weather
 const size_t bufferSize = JSON_ARRAY_SIZE(1) + JSON_OBJECT_SIZE(1) + 2*JSON_OBJECT_SIZE(2) + JSON_OBJECT_SIZE(4) + JSON_OBJECT_SIZE(5) + JSON_OBJECT_SIZE(6) + JSON_OBJECT_SIZE(12) + 342;
 
-void printTimetableRow(String busName, String departure, bool isRealtime, int idx) {
-    /* Funktio tulostaa näytön puskuriin bussiaikataulurivin. Esim.
-       110T  21:34~
-    */
-    display.setCursor(2, 2 + idx * 14);
-    display.print(busName);
-    display.setCursor(54, 2 + idx * 14);
-    display.print(departure);
-    if (isRealtime)
-    {
-        display.setCursor(108, 2 + idx * 14);
-        display.print("~");
-    }
-}
-
 void printWeatherRow(String type, String value, int idx) {
-    /* 
+   /* Prints a type and its value on the display.
+    * Current row is given by the index (idx).
     */
     display.setCursor(2, 10 + idx * 14);
     display.print(type);
     display.setCursor(44, 10 + idx * 14);
     display.print(value);
-
 }
 
 String timeToString(int time_int) {
@@ -73,30 +45,13 @@ String timeToString(int time_int) {
    * day, month, year, hour and minute.
    */
    time_t current_time = time_int + 3*60*60;  // From UTC to UTC+3
-   struct tm *tm = localtime(&current_time);
+   struct tm *time_data = localtime(&current_time);
    char date[20];
-   strftime(date, sizeof(date), "%d.%m.%y%k:%M", tm); // dd.mm.yyhh:mm, hh:mm will be separated later
+   // Specific data can be gotten from struct tm by strftime.
+   // See: http://man7.org/linux/man-pages/man3/strftime.3.html
+   strftime(date, sizeof(date), "%d.%m.%y%k:%M", time_data); // dd.mm.yyhh:mm, hh:mm will be separated later.
 
    return date;
-}
-
-void setValuesToScreen(JsonObject &root) {
-  /* Sets all the necessary info to the E-Display.
-   */
-
-}
-
-String parseTime(int seconds) {
-    /* Funktio parsii Digitransitin sekuntimuotoisesta lähtöajasta
-       merkkijonon. Esimerkiksi 78840 -> "21:54" 
-    */
-    int hours = seconds / 3600;
-    int minutes = (seconds % 3600) / 60;
-    char buffer[5];
-    if (hours == 25)
-        hours = 0;
-    sprintf(buffer, "%02d:%02d", hours, minutes);
-    return buffer;
 }
 
 String convertToCardinal(int dir) {
@@ -104,11 +59,11 @@ String convertToCardinal(int dir) {
    * Left side included, right side not included.
    */
   // North     (N)
-  if (dir >= 337.5 || dir < 22.5) return "N";
+  if (dir >= 337.5 || dir < 22.5)       return "N";
   // Northeast (NE)
-  else if (dir >= 22.5 && dir < 67.5) return "NE";
+  else if (dir >= 22.5 && dir < 67.5)   return "NE";
   // East      (E)
-  else if (dir >= 67.5 && dir < 112.5) return "E";
+  else if (dir >= 67.5 && dir < 112.5)  return "E";
   // Southeast (SE)
   else if (dir >= 112.5 && dir < 157.5) return "SE";
   // South     (S)
@@ -125,51 +80,37 @@ void setup()
 {
     // Open serial port at 9600 bps.
     Serial.begin(9600);
-    Serial.println("wifia");
-    // Note: One should always create a specific file for sensitive data such as
-    // SSIDs and passwords. However I accidentally pushed the data into Github
-    // already and Github happens to cache the data, so easy fixes such as 'git reset'
-    // wouldn't actually remove the data from the cache. Hence I just changed the password
-    // afterwards and let the old one be here.
+    // Connect to WiFi.
     WiFi.begin(ssid, password);
 
-    // Voit myös asettaa itsellesi staattisen IP:n
-    // säästääksesi akkua. Tämä lyhentää Wifi-verkkoon yhdistämistä
-    // usealla sekunnilla.
+    // Option for static IP-address. Connecting to WiFi should
+    // decrease by seconds.
     //IPAddress ip(192,168,1,50);
     //IPAddress gateway(192,168,1,1);
     //IPAddress subnet(255,255,255,0);
     //WiFi.config(ip, gateway, subnet);
-
-    Serial.println("setupissa");
     
-    // Yhdistetään langattomaan verkkoon
+    // WiFi returns WL_CONNECTED when a connection has been established.
     while (WiFi.status() != WL_CONNECTED)
     {
-        Serial.println("connecting...");
+        Serial.println("Connecting to WiFi...");
         delay(250);
     }
 
     /* Seuraavilla riveillä luodaan ja lähetetään HTTP-pyyntö Digitransitin rajapintaan */
 
-    HTTPClient http; // Alustetaan HTTP-Client -instanssi
+    HTTPClient http; // HTTP-Client initalization.
 
-    // Huomaa kaksi vaihtoehtoista osoitetta Digitransitin rajapintoihin,
-    // koko Suomen haku, ja HSL:n haku.
-    //http.begin("http://api.digitransit.fi/routing/v1/routers/hsl/index/graphql"); // <- HSL
-    //http.begin("http://api.digitransit.fi/routing/v1/routers/finland/index/graphql"); // <- koko Suomi
-    // API init. Notice that units are metric.
+    // API initalization. Notice that units are metric.
     http.begin("http://api.openweathermap.org/data/2.5/weather?id=634964&units=metric&APPID=" + API_KEY);
 
-    http.addHeader("Content-Type", "application/json"); // Rajapinta vaatii pyynnön JSON-pakettina
-    //int httpCode = http.POST(weatherQuery);             // POST-muotoinen pyyntö
-    int httpCode = http.GET();
+    http.addHeader("Content-Type", "application/json"); // Interface requires the request as JSON packet.
+    int httpCode = http.GET();  // GET-request.
 
     String payload;
     if (httpCode > 0)
     {
-      payload = http.getString();                  // Otetaan Digitransitin lähettämä vastaus talteen muuttujaan 'payload'
-      Serial.println(payload);
+      payload = http.getString();   // Reply from the API.
     }
     else
     {
@@ -177,29 +118,16 @@ void setup()
     }
        
     http.end();
-
-    // Test print.
-    //Serial.println(payload);
-
     
-
-    // Parsitaan vastaus helpomminkäsiteltävään muotoon
+    // ParseObject returns a JsonObject of which data can be easily accessed by []-operator.
     DynamicJsonBuffer jsonBuffer(bufferSize);
     JsonObject &root = jsonBuffer.parseObject(payload.c_str());
 
-    // otetaan referenssi JSON-muotoisen vastauksen bussilähdöistä 'departures'
-    //JsonArray &departures = root["data"]["stops"][0]["stoptimesWithoutPatterns"];
-    //JsonObject &main = root["main"];
-
-    // Hyödylliset rivit debuggaukseen:
      if (!root.success()) {
           Serial.println("Parsing failed");
      }
 
-    //int pressure = main["pressure"];    
-    //Serial.println(pressure);
-
-    // Alustetaan E-paperinäyttö
+    // E-paper display initalization.
     display.init();
     display.setTextColor(GxEPD_BLACK);
     display.setFont(&FreeMono9pt7b);
@@ -224,11 +152,9 @@ void setup()
     String humidity_str = String(humidity);
   
     double wind_speed = root["wind"]["speed"];
-    String wind_speed_str = "";
-    wind_speed_str = String(wind_speed,1);
+    String wind_speed_str = String(wind_speed,1);
 
     int wind_direction = root["wind"]["deg"];
-    Serial.println(wind_direction);
     String wind_direction_str = convertToCardinal(wind_direction);
   
     int cloud_percentage = root["clouds"]["all"];
@@ -238,10 +164,7 @@ void setup()
     String visibility_str = String(visibility);
 
     JsonArray &weather_array = root["weather"];
-    for (int i = 0; i < weather_array.size(); i++) {
-      printWeatherRow(weather_array[i]["main"], "", 13 + i);
-    }
-  
+    
     printWeatherRow(city_str, "",             0);
     printWeatherRow(current_date_str, "",     1);
     printWeatherRow(current_clock_str, "",    2);
@@ -250,41 +173,23 @@ void setup()
     printWeatherRow("Prs", pressure_str + "hPa",       5);
     printWeatherRow("Hum", humidity_str + "%",         6);
     printWeatherRow("Wnd", wind_speed_str + "m/s",     7);
-    printWeatherRow("", "from " + wind_direction_str,            8);
+    printWeatherRow("", "from " + wind_direction_str,  8);
     printWeatherRow("Cld", cloud_percentage_str + "%", 9);
     printWeatherRow("Vis", visibility_str + "m",       10);
     printWeatherRow("Weather:", "",                    12);
+    for (int i = 0; i < weather_array.size(); i++) {
+      printWeatherRow(weather_array[i]["main"], "", 13 + i);
+    }
 
     
-
     // *****************************************************************************
 
-    
-    
-    
-    /*
-    // Käydään kaikki bussilähdöt yksitellen läpi.
-    // Jokainen bussilähtö piirretään e-paperinäytön puskuriin.
-    int idx = 0;
-    for (auto &dep : departures)
-    {
-        int departureTime = dep["realtimeDeparture"]; // lähtöaika
-        String departure = parseTime(departureTime);  // parsittu lähtöaika
-        bool realTime = dep["realtime"]; // onko lähtö tarkka (käyttääkö HSL:n GPS-seurantaa?)
-        String busName = dep["trip"]["route"]["shortName"]; // Bussin reittinumero
-        printTimetableRow(busName, departure, realTime, ++idx); // tulostetaan rivi näytölle oikeaan kohtaan
-    }
-    */
-    
+    display.update(); // Updates everything in the buffer to the screen.
 
-    display.update(); // Piirrä näyttöpuskurin sisältö E-paperinäytölle
-
-    // Komennetaan ESP8266 syväunitilaan.
-    // Herättyään koodi suoritetaan setup()-funktion alusta
+    // Set ESP8266 to deepsleep. Upon awakening code starts from the beginning
+    // of this function.
     Serial.println("deepsleep");
     ESP.deepSleep(SLEEP_SECONDS * 1000000);
-
-    
 }
 
 void loop() {
