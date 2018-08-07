@@ -97,7 +97,7 @@ void setup()
         delay(250);
     }
 
-    /* Seuraavilla riveillä luodaan ja lähetetään HTTP-pyyntö Digitransitin rajapintaan */
+    // Creating and sending the HTTP request.
 
     HTTPClient http; // HTTP-Client initalization.
 
@@ -188,7 +188,6 @@ void setup()
 
     // Set ESP8266 to deepsleep. Upon awakening code starts from the beginning
     // of this function.
-    Serial.println("deepsleep");
     ESP.deepSleep(SLEEP_SECONDS * 1000000);
 }
 
