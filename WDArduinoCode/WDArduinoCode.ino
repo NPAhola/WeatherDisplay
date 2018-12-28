@@ -44,8 +44,21 @@ String timeToString(int time_int) {
   /* Transforms time given in unix UTC time to a string containing current
    * day, month, year, hour and minute.
    */
-   time_t current_time = time_int + 3*60*60;  // From UTC to UTC+3
+   
+   time_t current_time = time_int;   // UTC time
    struct tm *time_data = localtime(&current_time);
+
+   if (time_data->tm_isdst > 0)
+   {
+    // Summer time (Daylight Saving Time)
+    time_data->tm_hour += 3; // UTC+3
+   }
+   else
+   {
+    // Standard time or no info available
+    time_data->tm_hour += 2; // UTC+2
+   }
+   
    char date[20];
    // Specific data can be gotten from struct tm by strftime.
    // See: http://man7.org/linux/man-pages/man3/strftime.3.html
